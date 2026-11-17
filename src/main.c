@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdatomic.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +50,22 @@ char* produceFromRule(Rule rule, char* str) {
 	return buffer;
 }
 
-bool validateGrammar(Grammar grammar, const char* currentStr, const char* str) {
+typedef struct {
+	atomic_bool* isFound;
+	Grammar grammar;
+	char* currentStr;
+	const char* str;
+} validationArgs;
+
+void* validateGrammar(void* data) {
+	validationArgs args = *(validationArgs*)data;
+	if(atomic_load(args.isFound))
+		return false;
+
+	const char* currentStr = args.currentStr;
+	const char* str = args.str;
+	Grammar grammar = args.grammar;
+
 	if(strlen(currentStr) >= (strlen(str) * strlen(currentStr)))
 		return false;
 	if(strcmp(currentStr, str) == 0)
@@ -67,7 +83,11 @@ bool validateGrammar(Grammar grammar, const char* currentStr, const char* str) {
 					return false;
 				}
 
-				res |= validateGrammar(grammar, produced, str);
+				validationArgs* newArgs = malloc(sizeof(validationArgs));
+				newArgs->currentStr = produced;
+				newArgs->isFound    = args.isFound;
+				newArgs->str		= str;
+				validateGrammar(newArgs);
 				free(produced);
 
 			}
@@ -75,10 +95,11 @@ bool validateGrammar(Grammar grammar, const char* currentStr, const char* str) {
 
 	}
 
-	return res;
+	return (void*)res;
 }
 
 bool isValidGrammar(Grammar grammar, const char* str) {
+	atomic_bool found = false;
 	return validateGrammar(grammar, grammar.start, str);
 }
 
